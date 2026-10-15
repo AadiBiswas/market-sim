@@ -16,6 +16,10 @@ class Side(Enum):
     BUY = "buy"
     SELL = "sell"
 
+    @property
+    def opposite(self) -> "Side":
+        return Side.SELL if self is Side.BUY else Side.BUY
+
 
 class OrderType(Enum):
     LIMIT = "limit"

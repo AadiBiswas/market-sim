@@ -8,8 +8,8 @@ class OrderBook:
     """Resting limit orders only. No matching happens here.
 
     add() refuses anything that would lock or cross the book, so the resting
-    book is never crossed. Whatever does matching (Day 3) should execute the
-    marketable part first and only rest the leftover.
+    book is never crossed. Exchange.submit() does the matching and only rests
+    the leftover.
     """
 
     def __init__(self) -> None:
@@ -22,13 +22,11 @@ class OrderBook:
 
     @property
     def best_bid(self) -> int | None:
-        prices = self._prices[Side.BUY]
-        return prices[-1] if prices else None
+        return self._best_price(Side.BUY)
 
     @property
     def best_ask(self) -> int | None:
-        prices = self._prices[Side.SELL]
-        return prices[0] if prices else None
+        return self._best_price(Side.SELL)
 
     @property
     def spread(self) -> int | None:
@@ -74,3 +72,30 @@ class OrderBook:
 
     def quantity_at_price(self, side: Side, price: int) -> int:
         return sum(o.remaining for o in self._levels[side].get(price, ()))
+
+    # Matching internals. The engine fills the front order in place and calls
+    # _pop_front once it's done; nothing else should be reaching in here.
+
+    def _best_price(self, side: Side) -> int | None:
+        prices = self._prices[side]
+        if not prices:
+            return None
+        return prices[-1] if side is Side.BUY else prices[0]
+
+    def _front(self, side: Side) -> Order | None:
+        price = self._best_price(side)
+        return None if price is None else self._levels[side][price][0]
+
+    def _pop_front(self, side: Side) -> Order:
+        price = self._best_price(side)
+        level = self._levels[side][price]
+        order = level.popleft()
+        del self._orders[order.order_id]
+        if not level:
+            # Drop the level and its price together, otherwise best_* points at nothing.
+            del self._levels[side][price]
+            if side is Side.BUY:
+                self._prices[side].pop()
+            else:
+                self._prices[side].pop(0)
+        return order
