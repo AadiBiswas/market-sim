@@ -22,17 +22,23 @@ class Exchange:
     def __init__(self) -> None:
         self.book = OrderBook()
         self._next_trade_id = 1
+        # Every ID ever accepted, live or not. The book only knows live orders,
+        # and a recycled ID would make trade/fill history ambiguous later.
+        self._seen_order_ids: set[int] = set()
 
     def submit(self, order: Order) -> list[Trade]:
-        """Match `order` against the opposite side, rest any leftover, return trades in execution order."""
+        """Match `order` against the opposite side and return trades in execution order.
+
+        Limit leftovers rest in the book. Market leftovers are cancelled.
+        """
         # Validate everything up front. Finding a problem halfway through a
         # sweep would leave fills applied with nowhere for the order to go.
-        if order.order_type is not OrderType.LIMIT:
-            raise ValueError(f"only limit orders are supported for now, got {order.order_type.name}")
+        # Rejected orders don't consume their ID; accepted ones always do.
         if not order.is_active:
             raise ValueError(f"order {order.order_id} isn't live ({order.status.name})")
-        if self.book.get_order(order.order_id) is not None:
-            raise ValueError(f"duplicate order_id {order.order_id}")
+        if order.order_id in self._seen_order_ids:
+            raise ValueError(f"order_id {order.order_id} already used")
+        self._seen_order_ids.add(order.order_id)
 
         contra = order.side.opposite
         trades: list[Trade] = []
@@ -52,13 +58,33 @@ class Exchange:
             # A partially filled resting order stays at the front of its queue.
 
         if order.remaining:
-            # Loop only stops early once the order no longer crosses, so this
-            # can't trip add()'s crossing check. Priority starts now.
-            self.book.add(order)
+            if order.order_type is OrderType.MARKET:
+                # Book ran dry. Cancel rather than zero it out, so the unfilled
+                # size stays visible to anything measuring fill rates.
+                order.cancel()
+            else:
+                # Loop only stops early once the order no longer crosses, so this
+                # can't trip add()'s crossing check. Priority starts now.
+                self.book.add(order)
         return trades
+
+    def cancel(self, order_id: int) -> Order | None:
+        """Pull a resting order. Returns it, or None if nothing live has that ID.
+
+        Not an error: a strategy cancelling a quote that filled a moment ago is
+        perfectly normal.
+        """
+        order = self.book.get_order(order_id)
+        if order is None:
+            return None
+        self.book._remove(order)
+        order.cancel()
+        return order
 
     @staticmethod
     def _crosses(order: Order, contra_price: int) -> bool:
+        if order.order_type is OrderType.MARKET:
+            return True
         if order.side is Side.BUY:
             return contra_price <= order.price
         return contra_price >= order.price
