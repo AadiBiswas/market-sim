@@ -1,4 +1,4 @@
-from bisect import insort
+from bisect import bisect_left, insort
 from collections import deque
 
 from market_sim.exchange.order import Order, OrderType, Side
@@ -73,8 +73,9 @@ class OrderBook:
     def quantity_at_price(self, side: Side, price: int) -> int:
         return sum(o.remaining for o in self._levels[side].get(price, ()))
 
-    # Matching internals. The engine fills the front order in place and calls
-    # _pop_front once it's done; nothing else should be reaching in here.
+    # Exchange internals. Matching fills the front order in place and pops it
+    # once it's done; cancel removes from anywhere. Nothing else should be
+    # reaching in here.
 
     def _best_price(self, side: Side) -> int | None:
         prices = self._prices[side]
@@ -87,15 +88,21 @@ class OrderBook:
         return None if price is None else self._levels[side][price][0]
 
     def _pop_front(self, side: Side) -> Order:
-        price = self._best_price(side)
-        level = self._levels[side][price]
-        order = level.popleft()
+        order = self._front(side)
+        self._remove(order)
+        return order
+
+    def _remove(self, order: Order) -> None:
+        level = self._levels[order.side][order.price]
+        if level[0] is order:
+            level.popleft()
+        else:
+            # O(n) in the queue length. Fine for the reference engine; the
+            # C++ book can have intrusive lists or whatever it wants.
+            level.remove(order)
         del self._orders[order.order_id]
         if not level:
             # Drop the level and its price together, otherwise best_* points at nothing.
-            del self._levels[side][price]
-            if side is Side.BUY:
-                self._prices[side].pop()
-            else:
-                self._prices[side].pop(0)
-        return order
+            del self._levels[order.side][order.price]
+            prices = self._prices[order.side]
+            del prices[bisect_left(prices, order.price)]

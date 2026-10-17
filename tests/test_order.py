@@ -86,3 +86,18 @@ def test_submission_fields_are_immutable(attr):
 def test_enums_are_distinct():
     assert Side.BUY != Side.SELL
     assert {s.name for s in OrderStatus} == {"OPEN", "PARTIALLY_FILLED", "FILLED", "CANCELLED"}
+
+
+def test_cancel_keeps_remaining_and_only_works_once():
+    o = limit(qty=10)
+    o.fill(4)
+    o.cancel()
+    assert (o.remaining, o.status) == (6, OrderStatus.CANCELLED)
+    assert not o.is_active
+    with pytest.raises(ValueError):
+        o.cancel()
+
+    done = limit(qty=10)
+    done.fill(10)
+    with pytest.raises(ValueError):
+        done.cancel()

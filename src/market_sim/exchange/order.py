@@ -82,3 +82,10 @@ class Order:
             raise ValueError(f"fill qty {qty} out of range for remaining {self.remaining}")
         self.remaining -= qty
         self.status = OrderStatus.FILLED if self.remaining == 0 else OrderStatus.PARTIALLY_FILLED
+
+    def cancel(self) -> None:
+        # remaining is left alone on purpose: after cancel it means "never
+        # executed", and zero is reserved for fully filled.
+        if not self.is_active:
+            raise ValueError(f"can't cancel order {self.order_id} with status {self.status.name}")
+        self.status = OrderStatus.CANCELLED
