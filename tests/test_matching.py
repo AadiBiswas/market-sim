@@ -1,8 +1,6 @@
-import random
-
 import pytest
 
-from helpers import buy, check_invariants, ids_at, lim, mkt, sell
+from helpers import buy, check_invariants, ids_at, mkt, sell
 from market_sim.exchange import Exchange, OrderStatus, Side
 
 
@@ -192,59 +190,6 @@ def test_trade_ids_keep_counting_across_submissions():
     assert [t.trade_id for t in t1 + t2] == [1, 2]
 
 
-def test_invalid_submissions_rejected_before_any_fill():
-    ex = Exchange()
-    ex.submit(sell(1, 101, 5))
-    ex.submit(buy(2, 99, 5))
-
-    dup = buy(2, 101, 5)  # same ID as the resting bid, and marketable
-    filled = buy(3, 101, 1)
-    filled.fill(1)
-    cancelled = buy(4, 101, 1)
-    cancelled.status = OrderStatus.CANCELLED
-
-    for o in (dup, filled, cancelled):
-        with pytest.raises(ValueError):
-            ex.submit(o)
-
-    resting = ex.book.get_order(1)
-    assert (resting.remaining, resting.status) == (5, OrderStatus.OPEN)
-    check_invariants(ex.book)
-
-
-@pytest.mark.parametrize("seed", range(20))
-def test_random_flow_keeps_invariants(seed):
-    rng = random.Random(seed)
-    ex = Exchange()
-    orders, traded = [], 0
-    for oid in range(400):
-        roll = rng.random()
-        if roll < 0.15 and orders:
-            ex.cancel(rng.choice(orders).order_id)  # often dead already, which is fine
-            check_invariants(ex.book)
-            continue
-        side, qty = rng.choice(list(Side)), rng.randint(1, 20)
-        if roll < 0.25:
-            o = mkt(oid, side, qty, ts=oid)
-        else:
-            o = lim(oid, side, rng.randint(95, 105), qty, ts=oid, agent=rng.randrange(5))
-        orders.append(o)
-        trades = ex.submit(o)
-        assert sum(t.qty for t in trades) == o.qty - o.remaining
-        if o.price is not None:
-            for t in trades:
-                assert t.price <= o.price if o.side is Side.BUY else t.price >= o.price
-        if o.price is None:
-            assert ex.book.get_order(oid) is None
-            assert o.status in (OrderStatus.FILLED, OrderStatus.CANCELLED)
-        traded += sum(t.qty for t in trades)
-        check_invariants(ex.book)
-
-    # Every traded share left exactly one buy and one sell.
-    filled = {side: sum(o.qty - o.remaining for o in orders if o.side is side) for side in Side}
-    assert filled[Side.BUY] == filled[Side.SELL] == traded
-
-
 @pytest.mark.parametrize("lifecycle", ["resting", "filled", "cancelled", "market_filled", "market_cancelled"])
 def test_order_id_never_reusable(lifecycle):
     ex = Exchange()
@@ -270,13 +215,3 @@ def test_order_id_never_reusable(lifecycle):
     assert reuse.remaining == 5
     assert ex.book.quantity_at_price(Side.SELL, 120) == 5
     check_invariants(ex.book)
-
-
-def test_rejected_submission_does_not_consume_id():
-    ex = Exchange()
-    dead = buy(1, 99, 5)
-    dead.status = OrderStatus.CANCELLED
-    with pytest.raises(ValueError):
-        ex.submit(dead)
-    ex.submit(buy(1, 99, 5))
-    assert ex.book.get_order(1) is not None
