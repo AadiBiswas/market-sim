@@ -4,8 +4,12 @@ Conventions:
 - Prices are integer ticks. Float prices make price-level lookups and equality
   checks a minefield; conversion to currency happens at the edges, not here.
 - Timestamps are integer nanoseconds of simulation time, not wall clock.
-- Order IDs are assigned by the caller (eventually the exchange), so tests can
-  pick IDs explicitly and runs stay deterministic.
+- Order IDs are assigned by the caller, so tests can pick IDs explicitly and
+  runs stay deterministic. The exchange only enforces uniqueness.
+
+Once an order has been submitted, only the exchange should call fill() or
+cancel() on it. The book holds the same object the caller does, and changing
+it from outside leaves the book's indexes pointing at a lie.
 """
 
 from dataclasses import dataclass, field

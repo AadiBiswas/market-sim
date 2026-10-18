@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from market_sim.exchange.book import OrderBook
-from market_sim.exchange.order import Order, OrderType, Side
+from market_sim.exchange.order import Order, OrderStatus, OrderType, Side
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +19,12 @@ class Trade:
 
 
 class Exchange:
+    """Owns order flow into the book.
+
+    All submissions and cancels go through here. `book` is exposed for reading;
+    calling book.add() directly skips ID tracking and matching.
+    """
+
     def __init__(self) -> None:
         self.book = OrderBook()
         self._next_trade_id = 1
@@ -34,8 +40,13 @@ class Exchange:
         # Validate everything up front. Finding a problem halfway through a
         # sweep would leave fills applied with nowhere for the order to go.
         # Rejected orders don't consume their ID; accepted ones always do.
-        if not order.is_active:
-            raise ValueError(f"order {order.order_id} isn't live ({order.status.name})")
+        #
+        # Fresh orders only: anything already partially filled would carry
+        # fills that no trade record here explains.
+        if order.status is not OrderStatus.OPEN or order.remaining != order.qty:
+            raise ValueError(
+                f"order {order.order_id} isn't fresh ({order.status.name}, {order.remaining}/{order.qty} remaining)"
+            )
         if order.order_id in self._seen_order_ids:
             raise ValueError(f"order_id {order.order_id} already used")
         self._seen_order_ids.add(order.order_id)
