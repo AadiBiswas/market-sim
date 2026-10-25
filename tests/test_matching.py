@@ -1,6 +1,6 @@
 import pytest
 
-from helpers import buy, check_invariants, ids_at, mkt, sell
+from helpers import buy, check_invariants, ids_at, lim, mkt, sell
 from market_sim.exchange import Exchange, OrderStatus, Side
 
 
@@ -215,3 +215,12 @@ def test_order_id_never_reusable(lifecycle):
     assert reuse.remaining == 5
     assert ex.book.quantity_at_price(Side.SELL, 120) == 5
     check_invariants(ex.book)
+
+
+def test_self_trade_currently_allowed():
+    # Pinning today's behaviour, not endorsing it. Flip this when we pick a
+    # self-trade policy.
+    ex = Exchange()
+    ex.submit(lim(1, Side.SELL, 101, 5, agent=7))
+    trades = ex.submit(lim(2, Side.BUY, 101, 5, agent=7))
+    assert [(t.buy_agent_id, t.sell_agent_id, t.qty) for t in trades] == [(7, 7, 5)]

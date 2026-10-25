@@ -23,6 +23,10 @@ class Exchange:
 
     All submissions and cancels go through here. `book` is exposed for reading;
     calling book.add() directly skips ID tracking and matching.
+
+    No self-trade prevention: an agent's order will happily match its own
+    resting order. Needs an explicit policy before a market maker quotes both
+    sides.
     """
 
     def __init__(self) -> None:

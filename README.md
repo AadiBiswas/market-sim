@@ -10,8 +10,10 @@ market maker should change its quotes as order flow gets more informed, i.e.
 the tradeoff between spread capture, inventory risk, adverse selection, and
 getting filled at all.
 
-It's early. Right now the repo has the basic order types and not much else.
-The order book and matching engine come next.
+Current state: a price-time priority matching engine (limit and market
+orders, partial fills, cancels) and a deterministic discrete-event simulator
+that schedules submissions and cancels and records what happened. No traders
+or strategies yet.
 
 ## Setup
 
