@@ -7,7 +7,7 @@ name = "market-sim"
 version = "0.1.0"
 description = "Event-driven limit order book simulator for market-making research"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["numpy>=2"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

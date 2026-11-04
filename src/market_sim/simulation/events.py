@@ -28,7 +28,12 @@ class CancelOrder:
     order_id: int
 
 
-Event = SubmitOrder | CancelOrder
+@dataclass(frozen=True, slots=True)
+class UpdateFundamental:
+    pass
+
+
+Event = SubmitOrder | CancelOrder | UpdateFundamental
 
 
 @dataclass(frozen=True, slots=True)

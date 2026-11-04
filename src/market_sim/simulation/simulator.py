@@ -2,8 +2,9 @@ import heapq
 
 from market_sim.exchange import Exchange, Order, OrderStatus, OrderType, Trade
 from market_sim.simulation.events import (
-    Activity, CancelOrder, Cancelled, CancelRejected, Event, SubmitOrder, Submitted,
+    Activity, CancelOrder, Cancelled, CancelRejected, Event, SubmitOrder, Submitted, UpdateFundamental,
 )
+from market_sim.simulation.fundamental import FundamentalProcess, FundamentalSnapshot
 
 
 class Simulator:
@@ -14,7 +15,9 @@ class Simulator:
     matter how fast the machine is.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, fundamental: FundamentalProcess | None = None) -> None:
+        if fundamental is not None and fundamental.timestamp != 0:
+            raise ValueError(f"fundamental process must start at t=0, it's at t={fundamental.timestamp}")
         self.exchange = Exchange()
         self.now = 0
         self._queue: list[tuple[int, int, Event]] = []
@@ -22,6 +25,10 @@ class Simulator:
         # means heapq never falls through to comparing event payloads.
         self._seq = 0
         self._log: list[Activity] = []
+        self._fundamental = fundamental
+        self._fundamental_history: list[FundamentalSnapshot] = []
+        if fundamental is not None:
+            self._fundamental_history.append(FundamentalSnapshot(fundamental.timestamp, fundamental.value))
 
     @property
     def log(self) -> tuple[Activity, ...]:
@@ -31,7 +38,15 @@ class Simulator:
     def trades(self) -> list[Trade]:
         return [r for r in self._log if isinstance(r, Trade)]
 
+    @property
+    def fundamental_history(self) -> tuple[FundamentalSnapshot, ...]:
+        # Research-only ground truth, deliberately not in `log`. The log is what
+        # agents will eventually observe, and nobody gets the true value for free.
+        return tuple(self._fundamental_history)
+
     def schedule(self, timestamp: int, event: Event) -> None:
+        if isinstance(event, UpdateFundamental) and self._fundamental is None:
+            raise ValueError("can't schedule UpdateFundamental on a simulator with no fundamental process")
         # Scheduling at exactly `now` is fine: it runs after anything already
         # queued for this instant.
         if timestamp < self.now:
@@ -72,5 +87,13 @@ class Simulator:
                     self._log.append(CancelRejected(self.now, event.order_id))
                 else:
                     self._log.append(Cancelled(self.now, order.order_id, order.remaining))
+            case UpdateFundamental():
+                # Only explicit updates move the process, never order flow. Otherwise
+                # one extra order would consume a draw and change the whole path, and
+                # two strategies could never be compared on the same fundamentals.
+                value = self._fundamental.advance_to(self.now)
+                # A repeat at the same instant draws nothing, so there's nothing new to record.
+                if self.now > self._fundamental_history[-1].timestamp:
+                    self._fundamental_history.append(FundamentalSnapshot(self.now, value))
             case _:
                 raise TypeError(f"unknown event {event!r}")

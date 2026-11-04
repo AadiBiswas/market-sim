@@ -12,8 +12,9 @@ getting filled at all.
 
 Current state: a price-time priority matching engine (limit and market
 orders, partial fills, cancels) and a deterministic discrete-event simulator
-that schedules submissions and cancels and records what happened. No traders
-or strategies yet.
+that schedules submissions and cancels and records what happened, plus a
+latent fundamental value (arithmetic Brownian motion) that evolves on explicitly
+scheduled updates. No traders or strategies yet.
 
 ## Setup
 
