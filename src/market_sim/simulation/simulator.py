@@ -1,8 +1,9 @@
 import heapq
 
-from market_sim.exchange import Exchange, Order, OrderStatus, OrderType, Trade
+from market_sim.exchange import Exchange, Order, OrderStatus, OrderType, Side, Trade
 from market_sim.simulation.events import (
-    Activity, CancelOrder, Cancelled, CancelRejected, Event, SubmitOrder, Submitted, UpdateFundamental,
+    Activity, Agent, CancelOrder, Cancelled, CancelRejected, Event, MarketObservation, SubmitOrder,
+    Submitted, UpdateFundamental, WakeAgent,
 )
 from market_sim.simulation.fundamental import FundamentalProcess, FundamentalSnapshot
 
@@ -29,6 +30,12 @@ class Simulator:
         self._fundamental_history: list[FundamentalSnapshot] = []
         if fundamental is not None:
             self._fundamental_history.append(FundamentalSnapshot(fundamental.timestamp, fundamental.value))
+        self._agents: dict[int, Agent] = {}
+        # Agent orders get IDs from this counter, skipping anything already
+        # scheduled by hand. A manual ID scheduled *after* the counter handed it
+        # out isn't caught here -- the exchange rejects the duplicate on arrival.
+        self._next_order_id = 1
+        self._scheduled_order_ids: set[int] = set()
 
     @property
     def log(self) -> tuple[Activity, ...]:
@@ -44,9 +51,18 @@ class Simulator:
         # agents will eventually observe, and nobody gets the true value for free.
         return tuple(self._fundamental_history)
 
+    def register_agent(self, agent: Agent) -> None:
+        if agent.agent_id in self._agents:
+            raise ValueError(f"agent_id {agent.agent_id} already registered")
+        self._agents[agent.agent_id] = agent
+
     def schedule(self, timestamp: int, event: Event) -> None:
         if isinstance(event, UpdateFundamental) and self._fundamental is None:
             raise ValueError("can't schedule UpdateFundamental on a simulator with no fundamental process")
+        if isinstance(event, WakeAgent) and event.agent_id not in self._agents:
+            raise ValueError(f"can't wake unregistered agent {event.agent_id}")
+        if isinstance(event, SubmitOrder):
+            self._scheduled_order_ids.add(event.order_id)
         # Scheduling at exactly `now` is fine: it runs after anything already
         # queued for this instant.
         if timestamp < self.now:
@@ -95,5 +111,33 @@ class Simulator:
                 # A repeat at the same instant draws nothing, so there's nothing new to record.
                 if self.now > self._fundamental_history[-1].timestamp:
                     self._fundamental_history.append(FundamentalSnapshot(self.now, value))
+            case WakeAgent():
+                agent = self._agents[event.agent_id]
+                req = agent.on_wake(self._observe())
+                if req is not None:
+                    # Zero latency, but still through the queue: the order lands
+                    # at `now` behind anything already waiting at this instant,
+                    # and the agent never touches the exchange directly.
+                    self.schedule(self.now, SubmitOrder(
+                        self._allocate_order_id(), agent.agent_id, req.side, req.order_type, req.qty, req.price,
+                    ))
             case _:
                 raise TypeError(f"unknown event {event!r}")
+
+    def _observe(self) -> MarketObservation:
+        book = self.exchange.book
+        bid, ask = book.best_bid, book.best_ask
+        return MarketObservation(
+            timestamp=self.now,
+            best_bid=bid,
+            best_ask=ask,
+            bid_qty=0 if bid is None else book.quantity_at_price(Side.BUY, bid),
+            ask_qty=0 if ask is None else book.quantity_at_price(Side.SELL, ask),
+        )
+
+    def _allocate_order_id(self) -> int:
+        while self._next_order_id in self._scheduled_order_ids:
+            self._next_order_id += 1
+        oid = self._next_order_id
+        self._next_order_id += 1
+        return oid

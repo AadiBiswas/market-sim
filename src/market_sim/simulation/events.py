@@ -9,6 +9,7 @@ Records are frozen snapshots. The live Order keeps changing after it's logged
 """
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from market_sim.exchange import OrderType, Side, Trade
 
@@ -33,7 +34,39 @@ class UpdateFundamental:
     pass
 
 
-Event = SubmitOrder | CancelOrder | UpdateFundamental
+@dataclass(frozen=True, slots=True)
+class WakeAgent:
+    agent_id: int
+
+
+Event = SubmitOrder | CancelOrder | UpdateFundamental | WakeAgent
+
+
+# What agents see and what they can ask for. Agents get plain values only:
+# no book, no exchange, no simulator, no live Orders, and nothing about the
+# fundamental. Anything an agent is allowed to know has to be put here on purpose.
+
+@dataclass(frozen=True, slots=True)
+class MarketObservation:
+    timestamp: int
+    best_bid: int | None
+    best_ask: int | None
+    bid_qty: int
+    ask_qty: int
+
+
+@dataclass(frozen=True, slots=True)
+class OrderRequest:
+    side: Side
+    order_type: OrderType
+    qty: int
+    price: int | None = None
+
+
+class Agent(Protocol):
+    agent_id: int
+
+    def on_wake(self, obs: MarketObservation) -> OrderRequest | None: ...
 
 
 @dataclass(frozen=True, slots=True)
