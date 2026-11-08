@@ -14,7 +14,8 @@ Current state: a price-time priority matching engine (limit and market
 orders, partial fills, cancels) and a deterministic discrete-event simulator
 that schedules submissions and cancels and records what happened, plus a
 latent fundamental value (arithmetic Brownian motion) that evolves on explicitly
-scheduled updates. No traders or strategies yet.
+scheduled updates, and seeded noise traders that wake on a schedule and see only
+the top of the book. No market maker or informed traders yet.
 
 ## Setup
 
@@ -25,6 +26,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 pytest
+python examples/noise_market.py   # small deterministic multi-agent run
 ```
 
 ## Conventions
